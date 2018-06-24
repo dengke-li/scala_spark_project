@@ -1,6 +1,7 @@
 package spark
 
 import spark.SparkContext
+import scala.collection.Iterator
 
 /**
  * A Resilient Distributed Dataset (RDD), the basic abstraction in Spark. Represents an immutable, 
@@ -21,11 +22,15 @@ import spark.SparkContext
  * addition, PairRDDFunctions contains extra methods available on RDDs of key-value pairs, and 
  * SequenceFileRDDFunctions contains extra methods for saving RDDs to Hadoop SequenceFiles.
  */
-abstract class RDD(sc: SparkContext){
-  def compute(split:Seq[Int]):Seq[Int]
-  def splits:Seq[Seq[Int]]
+abstract class RDD(sc: SparkContext) extends Serializable{
+  def compute(split:Split):Iterator[Int]
+  def splits:Array[Split]
   def map(f:Int=>Int):MappedRDD={
     new MappedRDD(this, sc, f)
+  }
+  
+  def filter(f:Int=>Boolean):FilterRDD={
+    new FilterRDD(this, sc, f)
   }
   
   def collect():Array[Int]={
@@ -36,20 +41,26 @@ abstract class RDD(sc: SparkContext){
   
 }
 
-class Iterator
-
 // here when extends RDD, should indicate the parameter
-class parallelizeRDD(sc:SparkContext, data:Seq[Seq[Int]]) extends RDD(sc){
-  override def splits:Seq[Seq[Int]] = {data}
-  override def compute(split:Seq[Int]):Seq[Int]={
-    split
+class parallelizeRDD(sc:SparkContext, data:Array[Split]) extends RDD(sc){
+  override def splits:Array[Split] = {data}
+  override def compute(split:Split):Iterator[Int]={
+    split.getSeq().toIterator
+    }
+}
+
+class FilterRDD(prev:RDD, sc:SparkContext,f:Int=>Boolean) extends RDD(sc){
+  override def splits = prev.splits
+  override def compute(split:Split):Iterator[Int]= {
+    val temp = prev.compute(split)
+    temp.filter(f)
     }
 }
 
 class MappedRDD(prev:RDD,sc:SparkContext,f:Int=>Int) extends RDD(sc) {
 
   override def splits = prev.splits
-  override def compute(split:Seq[Int]):Seq[Int]= {
+  override def compute(split:Split):Iterator[Int]= {
     prev.compute(split).map(e=>f(e))
     }
 }
